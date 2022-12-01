@@ -5,14 +5,37 @@ import (
 	"encoding/json"
 	"findregion/dto"
 	"fmt"
+	"net"
+	"os"
 )
 
 //go:embed ip-ranges.json
 var content embed.FS
 
 func main() {
+	ipOrHost := os.Args[1]
+	var ipAddress net.IP
+
+	addr := net.ParseIP(ipOrHost)
+	if addr != nil {
+		ipAddress = addr
+	} else {
+		host := ipOrHost
+		resolvedIP, err := net.ResolveIPAddr("ip", host)
+
+		if err != nil {
+			panic(err)
+		}
+
+		ipAddress = resolvedIP.IP
+	}
+
 	textBytes, _ := content.ReadFile("ip-ranges.json")
 
+	lookupResult := dto.LookupResult{
+		ResolvedIP: string(ipAddress.String()),
+		Region:     "Unknown",
+	}
 	var result dto.IPRanges
 	err := json.Unmarshal(textBytes, &result)
 
@@ -21,24 +44,17 @@ func main() {
 	}
 
 	for _, prefix := range result.Prefixes {
-		fmt.Println(prefix)
+		_, ipnet, err := net.ParseCIDR(prefix.IPPrefix)
+
+		if err != nil {
+			panic(err)
+		}
+
+		if ipnet.Contains(ipAddress) {
+			lookupResult.Region = prefix.Region
+			break
+		}
 	}
-
-	// jsonFile, err := os.Open(filePath)
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// fmt.Println("Successfully Opened users.json")
-	// // defer the closing of our jsonFile so that we can parse it later on
-	// defer jsonFile.Close()
-
-	// byteValue, _ := ioutil.ReadAll(jsonFile)
-
-	// fmt.Printf("byteValue len %d\n", len(byteValue))
-
-	// var result map[string]interface{}
-	// json.Unmarshal([]byte(byteValue), &result)
-
-	// fmt.Println(result["prefixes"])
-
+	fmt.Printf("Region: %s\n", lookupResult.Region)
+	fmt.Printf("IP: %s\n", lookupResult.ResolvedIP)
 }
